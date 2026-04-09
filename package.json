@@ -1,0 +1,27 @@
+{
+  "name": "medical-appointment-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test": "rm -rf .test-dist && tsc -p tsconfig.tests.json && node --test .test-dist/tests/*.js"
+  },
+  "dependencies": {
+    "next": "15.2.4",
+    "pg": "^8.20.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.14",
+    "@types/pg": "^8.20.0",
+    "@types/react": "19.0.12",
+    "@types/react-dom": "19.0.4",
+    "netlify-cli": "^24.11.1",
+    "typescript": "5.8.2"
+  }
+}
