@@ -13,11 +13,33 @@ function getDatabaseUrl() {
   return process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/medinest";
 }
 
+function getSslConfig() {
+  const databaseUrl = getDatabaseUrl();
+
+  try {
+    const hostname = new URL(databaseUrl).hostname;
+    const isLocalHost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname.endsWith(".local");
+
+    if (isLocalHost) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return { rejectUnauthorized: false };
+}
+
 function getPool() {
   if (!global.medinestPool) {
     global.medinestPool = new Pool({
       connectionString: getDatabaseUrl(),
-      allowExitOnIdle: true
+      allowExitOnIdle: true,
+      ssl: getSslConfig()
     });
   }
 
@@ -132,6 +154,21 @@ WHERE status IN ('pending', 'confirmed', 'completed');
 DROP INDEX IF EXISTS availability_slots_doctor_time_mode_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS availability_slots_doctor_time_unique
 ON availability_slots (doctor_profile_id, starts_at);
+
+CREATE INDEX IF NOT EXISTS availability_slots_public_lookup_idx
+ON availability_slots (status, starts_at, doctor_profile_id);
+
+CREATE INDEX IF NOT EXISTS doctor_clinics_doctor_lookup_idx
+ON doctor_clinics (doctor_profile_id);
+
+CREATE INDEX IF NOT EXISTS appointments_patient_lookup_idx
+ON appointments (patient_id, status, slot_id);
+
+CREATE INDEX IF NOT EXISTS appointments_doctor_lookup_idx
+ON appointments (doctor_profile_id, status, slot_id);
+
+CREATE INDEX IF NOT EXISTS notifications_user_created_idx
+ON notifications (user_id, created_at DESC);
 `;
 
 function baseDate() {

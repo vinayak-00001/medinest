@@ -1,6 +1,8 @@
+"use client";
+
 import Link from "next/link";
 
-export default function Custom500Page() {
+export default function GlobalErrorPage() {
   return (
     <main
       style={{

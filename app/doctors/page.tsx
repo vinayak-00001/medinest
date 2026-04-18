@@ -2,7 +2,7 @@ import { BookingForm } from "@/components/booking-form";
 import { getDoctorDirectory } from "@/lib/data";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 function getSpecialtyBadge(specialty: string) {
   if (specialty.toLowerCase().includes("cardio")) {

@@ -18,6 +18,7 @@ import {
   Prescription,
   Role,
   Session,
+  AppointmentPreview,
   SlotStatus,
   User
 } from "@/lib/types";
@@ -703,7 +704,30 @@ export async function adminUpdateDoctor(input: {
   return refreshed;
 }
 
-export async function getAppointmentViews(): Promise<AppointmentView[]> {
+async function queryAppointmentViews(input?: {
+  appointmentId?: string;
+  patientId?: string;
+  doctorUserId?: string;
+}): Promise<AppointmentView[]> {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (input?.appointmentId) {
+    params.push(input.appointmentId);
+    clauses.push(`a.id = $${params.length}`);
+  }
+
+  if (input?.patientId) {
+    params.push(input.patientId);
+    clauses.push(`a.patient_id = $${params.length}`);
+  }
+
+  if (input?.doctorUserId) {
+    params.push(input.doctorUserId);
+    clauses.push(`du.id = $${params.length}`);
+  }
+
+  const whereSql = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const result = await dbQuery(
     `SELECT
        a.id AS appointment_id,
@@ -755,8 +779,17 @@ export async function getAppointmentViews(): Promise<AppointmentView[]> {
      JOIN users du ON du.id = dp.user_id
      JOIN users pu ON pu.id = a.patient_id
      JOIN availability_slots s ON s.id = a.slot_id
-     ORDER BY s.starts_at DESC`
+     ${whereSql}
+     ORDER BY s.starts_at DESC`,
+    params
   );
+
+  if (!result.rows.length) {
+    return [];
+  }
+
+  const appointmentIds = Array.from(new Set(result.rows.map((row) => String(row.appointment_id))));
+  const doctorProfileIds = Array.from(new Set(result.rows.map((row) => String(row.doctor_id))));
   const prescriptionResult = await dbQuery(
     `SELECT
        id,
@@ -769,10 +802,15 @@ export async function getAppointmentViews(): Promise<AppointmentView[]> {
        attachment_name,
        attachment_type,
        issued_at
-     FROM prescriptions`
+     FROM prescriptions
+     WHERE appointment_id = ANY($1::text[])`,
+    [appointmentIds]
   );
 
-  const clinicLinkResult = await dbQuery("SELECT doctor_profile_id, clinic_id FROM doctor_clinics");
+  const clinicLinkResult = await dbQuery(
+    "SELECT doctor_profile_id, clinic_id FROM doctor_clinics WHERE doctor_profile_id = ANY($1::text[])",
+    [doctorProfileIds]
+  );
   const clinicIdsByDoctor = new Map<string, string[]>();
   for (const row of clinicLinkResult.rows) {
     const list = clinicIdsByDoctor.get(String(row.doctor_profile_id)) ?? [];
@@ -853,9 +891,42 @@ export async function getAppointmentViews(): Promise<AppointmentView[]> {
   });
 }
 
+export async function getAppointmentViews(): Promise<AppointmentView[]> {
+  return queryAppointmentViews();
+}
+
+export async function getAppointmentPreviews(limit = 2): Promise<AppointmentPreview[]> {
+  const result = await dbQuery(
+    `SELECT
+       a.id AS appointment_id,
+       a.mode AS appointment_mode,
+       a.status AS appointment_status,
+       s.starts_at AS slot_starts_at,
+       du.name AS doctor_user_name,
+       pu.name AS patient_name
+     FROM appointments a
+     JOIN doctor_profiles dp ON dp.id = a.doctor_profile_id
+     JOIN users du ON du.id = dp.user_id
+     JOIN users pu ON pu.id = a.patient_id
+     JOIN availability_slots s ON s.id = a.slot_id
+     ORDER BY s.starts_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  return result.rows.map((row) => ({
+    id: String(row.appointment_id),
+    patientName: String(row.patient_name),
+    doctorName: String(row.doctor_user_name),
+    mode: row.appointment_mode as ConsultationMode,
+    status: row.appointment_status as AppointmentStatus,
+    startsAt: new Date(String(row.slot_starts_at)).toISOString()
+  }));
+}
+
 export async function getAppointmentViewById(appointmentId: string) {
-  const appointments = await getAppointmentViews();
-  return appointments.find((appointment) => appointment.id === appointmentId);
+  const appointments = await queryAppointmentViews({ appointmentId });
+  return appointments[0];
 }
 
 export async function getNotificationsForUser(userId: string) {
@@ -878,26 +949,38 @@ export async function buildDashboardData(session: Session): Promise<DashboardDat
     throw new Error("User not found");
   }
 
-  const [appointments, notifications, doctors, clinics] = await Promise.all([
-    getAppointmentViews(),
-    getNotificationsForUser(session.userId),
-    getDoctorDirectory(),
-    getClinics()
-  ]);
+  const [notifications, clinics] = await Promise.all([getNotificationsForUser(session.userId), getClinics()]);
+
+  let appointments: AppointmentView[] = [];
+  let doctors: DoctorDirectoryItem[] = [];
+
+  if (session.role === "patient") {
+    appointments = await queryAppointmentViews({ patientId: session.userId });
+  } else if (session.role === "doctor") {
+    const [doctorProfile, doctorAppointments] = await Promise.all([
+      getDoctorProfileByUserId(session.userId),
+      queryAppointmentViews({ doctorUserId: session.userId })
+    ]);
+
+    appointments = doctorAppointments;
+    if (doctorProfile) {
+      doctors = [
+        {
+          doctor: doctorProfile,
+          clinics: clinics.filter((clinic) => doctorProfile.clinicIds.includes(clinic.id)),
+          nextSlots: []
+        }
+      ];
+    }
+  } else {
+    [appointments, doctors] = await Promise.all([queryAppointmentViews(), getDoctorDirectory()]);
+  }
 
   return {
     session,
     user,
     doctors,
-    appointments: appointments.filter((appointment: AppointmentView) => {
-      if (session.role === "patient") {
-        return appointment.patientId === session.userId;
-      }
-      if (session.role === "doctor") {
-        return appointment.doctor.user.id === session.userId;
-      }
-      return true;
-    }),
+    appointments,
     notifications,
     clinics
   };

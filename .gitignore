@@ -8,3 +8,6 @@ public/uploads
 .local-postgres
 .test-dist
 *.tsbuildinfo
+
+# Local Netlify folder
+.netlify

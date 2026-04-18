@@ -113,6 +113,15 @@ export interface DoctorDirectoryItem {
   nextSlots: AvailabilitySlot[];
 }
 
+export interface AppointmentPreview {
+  id: string;
+  patientName: string;
+  doctorName: string;
+  mode: ConsultationMode;
+  status: AppointmentStatus;
+  startsAt: string;
+}
+
 export interface DashboardData {
   session: Session;
   user: User;

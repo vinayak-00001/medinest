@@ -1,9 +1,9 @@
 import Link from "next/link";
 
-import { getAppointmentViews, getDoctorDirectory } from "@/lib/data";
+import { getAppointmentPreviews, getDoctorDirectory } from "@/lib/data";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 function getSpecialtyBadge(specialty: string) {
   if (specialty.toLowerCase().includes("cardio")) {
@@ -16,8 +16,7 @@ function getSpecialtyBadge(specialty: string) {
 }
 
 export default async function HomePage() {
-  const doctors = await getDoctorDirectory();
-  const highlightedAppointments = (await getAppointmentViews()).slice(0, 2);
+  const [doctors, highlightedAppointments] = await Promise.all([getDoctorDirectory(), getAppointmentPreviews(2)]);
   const metrics = [
     { label: "Video visits", value: "Available" },
     { label: "Clinic visits", value: "Available" },
@@ -85,11 +84,11 @@ export default async function HomePage() {
                 {highlightedAppointments.map((appointment) => (
                   <div className="record" key={appointment.id}>
                     <div className="split">
-                      <strong>{appointment.patient.name}</strong>
+                      <strong>{appointment.patientName}</strong>
                       <span className="pill">{appointment.status}</span>
                     </div>
                     <p className="tiny muted">
-                      {appointment.doctor.user.name} • {appointment.mode} • {formatDateTime(appointment.slot.startsAt)}
+                      {appointment.doctorName} • {appointment.mode} • {formatDateTime(appointment.startsAt)}
                     </p>
                   </div>
                 ))}
